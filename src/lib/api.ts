@@ -8,6 +8,13 @@ export interface Listing {
   status: ListingStatus;
 }
 
+export interface ListingsResponse {
+  listings: Listing[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 export async function login({
   username,
   password,
@@ -22,13 +29,24 @@ export async function login({
   }
 }
 
-export async function fetchListings(): Promise<Listing[]> {
+export async function fetchListings(
+  page = 1,
+  pageSize = 10,
+  status?: ListingStatus
+): Promise<ListingsResponse> {
   try {
-    const res = await axios.get<{ listings: Listing[] }>("/api/listings");
-    return res.data.listings ?? [];
+    const params = new URLSearchParams({
+      page: String(page),
+      pageSize: String(pageSize),
+    });
+    if (status) params.append("status", status);
+    const res = await axios.get<ListingsResponse>(
+      `/api/listings?${params.toString()}`
+    );
+    return res.data;
   } catch (error) {
     console.error("error", error);
-    return [];
+    return { listings: [], total: 0, page, pageSize };
   }
 }
 
@@ -54,4 +72,10 @@ export async function logout() {
   } catch (error) {
     console.error("error", error);
   }
+}
+
+export async function fetchAuditLogs() {
+  const res = await fetch("/api/audit-log");
+  if (!res.ok) throw new Error("Failed to fetch audit logs");
+  return res.json();
 }

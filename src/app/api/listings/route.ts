@@ -21,9 +21,7 @@ export async function GET(req: NextRequest) {
   const total = (totalRow as { count: number }).count;
   const offset = (page - 1) * pageSize;
   const listings = db
-    .prepare(
-      `SELECT * FROM listings ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
-    )
+    .prepare(`SELECT * FROM listings ${where} ORDER BY id ASC LIMIT ? OFFSET ?`)
     .all(...params, pageSize, offset);
 
   return NextResponse.json({ listings, total, page, pageSize });

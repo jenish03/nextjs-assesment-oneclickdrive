@@ -5,6 +5,7 @@ import {
   approveListing,
   rejectListing,
   Listing,
+  ListingsResponse,
   logout,
 } from "@/lib/api";
 import { useAuthRedirect } from "@/lib/useAuthRedirect";
@@ -17,17 +18,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { useState, useCallback, useMemo, useEffect } from "react";
+import React, { useState, useCallback, useMemo, useEffect } from "react";
 import type { ReactElement } from "react";
 import Cookies from "js-cookie";
 import { useRouter } from "next/navigation";
@@ -43,9 +35,79 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import Link from "next/link";
+import EditListingDialog from "./EditListingDialog";
+
+// ListingRow memoized component for table row rendering
+const ListingRow = React.memo(function ListingRow({
+  listing,
+  approvingId,
+  rejectingId,
+  handleApprove,
+  handleReject,
+  handleEdit,
+}: {
+  listing: Listing;
+  approvingId: number | null;
+  rejectingId: number | null;
+  handleApprove: (listing: Listing) => void;
+  handleReject: (listing: Listing) => void;
+  handleEdit: (listing: Listing) => void;
+}) {
+  return (
+    <TableRow key={listing.id}>
+      <TableCell>{listing.id}</TableCell>
+      <TableCell>{listing.title}</TableCell>
+      <TableCell>{listing.description}</TableCell>
+      <TableCell>{listing.status}</TableCell>
+      <TableCell className="flex flex-col gap-2 sm:flex-row sm:gap-2">
+        <Button
+          size="sm"
+          className={`cursor-pointer ${
+            listing.status === "approved"
+              ? "bg-green-500 text-white hover:bg-green-600"
+              : ""
+          }`}
+          variant={listing.status === "approved" ? "default" : "outline"}
+          disabled={approvingId === listing.id || listing.status === "approved"}
+          onClick={() => handleApprove(listing)}
+          aria-label={`Approve listing ${listing.id}`}
+        >
+          {listing.status === "approved" ? "Approved" : "Approve"}
+        </Button>
+        <Button
+          size="sm"
+          className={`cursor-pointer ${
+            listing.status === "rejected"
+              ? "bg-red-500 text-white hover:bg-red-600"
+              : ""
+          }`}
+          variant={listing.status === "rejected" ? "destructive" : "outline"}
+          disabled={rejectingId === listing.id || listing.status === "rejected"}
+          onClick={() => handleReject(listing)}
+          aria-label={`Reject listing ${listing.id}`}
+        >
+          {listing.status === "rejected" ? "Rejected" : "Reject"}
+        </Button>
+        <Button
+          size="sm"
+          className="cursor-pointer"
+          variant="outline"
+          onClick={() => handleEdit(listing)}
+          aria-label={`Edit listing ${listing.id}`}
+        >
+          Edit
+        </Button>
+      </TableCell>
+    </TableRow>
+  );
+});
 
 interface DashboardClientProps {
   initialListings: Listing[];
+  total: number;
+  page: number;
+  pageSize: number;
 }
 
 const editSchema = yup.object({
@@ -57,16 +119,22 @@ const editSchema = yup.object({
     .required("Status is required"),
 });
 
-type EditFormValues = yup.InferType<typeof editSchema>;
+export type EditFormValues = yup.InferType<typeof editSchema>;
 
 export default function DashboardClient({
   initialListings,
+  total: initialTotal,
+  page: initialPage,
+  pageSize: initialPageSize,
 }: Readonly<DashboardClientProps>) {
   const [authChecked, setAuthChecked] = useState(false);
   const [isAuth, setIsAuth] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editListing, setEditListing] = useState<Listing | null>(null);
   const router = useRouter();
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [approvingId, setApprovingId] = useState<number | null>(null);
+  const [rejectingId, setRejectingId] = useState<number | null>(null);
 
   const {
     register,
@@ -92,15 +160,31 @@ export default function DashboardClient({
   const [actionSuccess, setActionSuccess] = useState("");
 
   const {
-    data: listings = [],
+    data: listingsData = {
+      listings: initialListings,
+      total: initialTotal,
+      page: initialPage,
+      pageSize: initialPageSize,
+    },
     isLoading,
     error,
-  } = useQuery<Listing[]>({
-    queryKey: ["listings"],
-    queryFn: fetchListings,
+  } = useQuery<ListingsResponse>({
+    queryKey: ["listings", initialPage, initialPageSize, statusFilter],
+    queryFn: () =>
+      fetchListings(
+        initialPage,
+        initialPageSize,
+        statusFilter === "all" ? undefined : (statusFilter as ListingStatus)
+      ),
     enabled: isAuth,
-    initialData: initialListings,
+    initialData: {
+      listings: initialListings,
+      total: initialTotal,
+      page: initialPage,
+      pageSize: initialPageSize,
+    },
   });
+  const { listings, total, page, pageSize } = listingsData;
 
   const approveMutation = useMutation({
     mutationFn: approveListing,
@@ -144,15 +228,27 @@ export default function DashboardClient({
   });
 
   const handleApprove = useCallback(
-    (id: number) => {
-      approveMutation.mutate(id);
+    (listing: Listing) => {
+      setApprovingId(listing.id);
+      approveMutation.mutate(listing.id, {
+        onSuccess: () => {
+          setActionSuccess(`${listing.title} approved.`);
+        },
+        onSettled: () => setApprovingId(null),
+      });
     },
     [approveMutation]
   );
 
   const handleReject = useCallback(
-    (id: number) => {
-      rejectMutation.mutate(id);
+    (listing: Listing) => {
+      setRejectingId(listing.id);
+      rejectMutation.mutate(listing.id, {
+        onSuccess: () => {
+          setActionSuccess(`${listing.title} rejected.`);
+        },
+        onSettled: () => setRejectingId(null),
+      });
     },
     [rejectMutation]
   );
@@ -176,52 +272,19 @@ export default function DashboardClient({
     logoutMutation.mutate();
   };
 
-  const renderTableRows = useMemo<ReactElement[]>(
-    () =>
-      (listings ?? []).map((listing: Listing) => (
-        <TableRow key={listing.id}>
-          <TableCell>{listing.id}</TableCell>
-          <TableCell>{listing.title}</TableCell>
-          <TableCell>{listing.description}</TableCell>
-          <TableCell>{listing.status}</TableCell>
-          <TableCell className="flex flex-col gap-2 sm:flex-row sm:gap-2">
-            <Button
-              size="sm"
-              variant="default"
-              disabled={approveMutation.isPending}
-              onClick={() => handleApprove(listing.id)}
-              aria-label={`Approve listing ${listing.id}`}
-            >
-              Approve
-            </Button>
-            <Button
-              size="sm"
-              variant="destructive"
-              disabled={rejectMutation.isPending}
-              onClick={() => handleReject(listing.id)}
-              aria-label={`Reject listing ${listing.id}`}
-            >
-              Reject
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => handleEdit(listing)}
-              aria-label={`Edit listing ${listing.id}`}
-            >
-              Edit
-            </Button>
-          </TableCell>
-        </TableRow>
-      )),
-    [
-      listings,
-      approveMutation.isPending,
-      rejectMutation.isPending,
-      handleApprove,
-      handleReject,
-    ]
-  );
+  const renderTableRows = useMemo<ReactElement[]>(() => {
+    return (listings ?? []).map((listing: Listing) => (
+      <ListingRow
+        key={listing.id}
+        listing={listing}
+        approvingId={approvingId}
+        rejectingId={rejectingId}
+        handleApprove={handleApprove}
+        handleReject={handleReject}
+        handleEdit={handleEdit}
+      />
+    ));
+  }, [listings, approvingId, rejectingId]);
 
   let content: ReactElement | null = null;
   if (isLoading) {
@@ -247,7 +310,37 @@ export default function DashboardClient({
     );
   }
 
-  if (!authChecked) return null;
+  // Pagination logic
+  const totalPages = Math.ceil(total / pageSize);
+  const handlePageChange = (newPage: number) => {
+    if (newPage < 1 || newPage > totalPages) {
+      return;
+    }
+    const params = new URLSearchParams();
+    params.set("page", String(newPage));
+    params.set("pageSize", String(pageSize));
+    if (statusFilter && statusFilter !== "all") {
+      params.set("status", statusFilter);
+    }
+    router.push(`/dashboard?${params.toString()}`);
+  };
+
+  // Handle status filter change
+  const handleStatusFilterChange = (value: string) => {
+    setStatusFilter(value);
+    // Reset to page 1 on filter change
+    const params = new URLSearchParams();
+    params.set("page", "1");
+    params.set("pageSize", String(pageSize));
+    if (value && value !== "all") {
+      params.set("status", value);
+    }
+    router.push(`/dashboard?${params.toString()}`);
+  };
+
+  if (!authChecked) {
+    return null;
+  }
 
   return (
     <div className="max-w-6xl mx-auto py-8 px-2 sm:px-6 lg:px-8">
@@ -255,15 +348,50 @@ export default function DashboardClient({
         <h1 className="text-2xl sm:text-3xl font-bold text-center sm:text-left">
           Car Rental Listings
         </h1>
-        <Button
-          type="button"
-          variant="outline"
-          aria-label="Logout"
-          onClick={handleLogout}
-          className="w-full sm:w-auto"
-        >
-          Logout
-        </Button>
+        <div className="flex gap-2 w-full sm:w-auto">
+          <Link href="/dashboard/audit-log">
+            <Button
+              type="button"
+              variant="secondary"
+              aria-label="Audit Log"
+              className="w-full sm:w-auto cursor-pointer"
+            >
+              Audit Log
+            </Button>
+          </Link>
+          <Button
+            type="button"
+            variant="outline"
+            aria-label="Logout"
+            onClick={handleLogout}
+            className="w-full sm:w-auto cursor-pointer"
+          >
+            Logout
+          </Button>
+        </div>
+      </div>
+      {/* Status Filter */}
+      <div className="mb-4 flex items-center gap-2">
+        <Label htmlFor="status-filter">Filter by status:</Label>
+        <Select value={statusFilter} onValueChange={handleStatusFilterChange}>
+          <SelectTrigger id="status-filter" className="w-40 cursor-pointer">
+            <SelectValue placeholder="All" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all" className="cursor-pointer">
+              All
+            </SelectItem>
+            <SelectItem value="approved" className="cursor-pointer">
+              Approved
+            </SelectItem>
+            <SelectItem value="pending" className="cursor-pointer">
+              Pending
+            </SelectItem>
+            <SelectItem value="rejected" className="cursor-pointer">
+              Rejected
+            </SelectItem>
+          </SelectContent>
+        </Select>
       </div>
       {actionSuccess && (
         <div
@@ -282,78 +410,41 @@ export default function DashboardClient({
         </div>
       )}
       {content}
-      <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit Listing</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleSubmit(handleEditSubmit)} className="space-y-4">
-            <div>
-              <Label htmlFor="edit-title" className="mb-1">
-                Title
-              </Label>
-              <Input id="edit-title" {...register("title")} required />
-              {errors.title && (
-                <p className="text-red-600 text-xs mt-1">
-                  {errors.title.message}
-                </p>
-              )}
-            </div>
-            <div>
-              <Label htmlFor="edit-description" className="mb-1">
-                Description
-              </Label>
-              <Textarea
-                id="edit-description"
-                {...register("description")}
-                required
-              />
-              {errors.description && (
-                <p className="text-red-600 text-xs mt-1">
-                  {errors.description.message}
-                </p>
-              )}
-            </div>
-            <div>
-              <Label htmlFor="edit-status" className="mb-1">
-                Status
-              </Label>
-              <Select
-                value={watch("status") as ListingStatus}
-                onValueChange={(value: ListingStatus) =>
-                  setValue("status", value, { shouldValidate: true })
-                }
-              >
-                <SelectTrigger id="edit-status" className="w-full">
-                  <SelectValue placeholder="Select status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="approved">Approved</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="rejected">Rejected</SelectItem>
-                </SelectContent>
-              </Select>
-              {errors.status && (
-                <p className="text-red-600 text-xs mt-1">
-                  {errors.status.message}
-                </p>
-              )}
-            </div>
-            <DialogFooter>
-              <Button type="submit" disabled={updateMutation.isPending}>
-                {updateMutation.isPending ? "Saving..." : "Save"}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setEditOpen(false)}
-              >
-                Cancel
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      {/* Pagination Controls */}
+      <div className="flex justify-center items-center gap-4 mt-6">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => handlePageChange(page - 1)}
+          disabled={page <= 1}
+          aria-label="Previous page"
+        >
+          Prev
+        </Button>
+        <span className="text-sm">
+          Page {page} of {totalPages}
+        </span>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => handlePageChange(page + 1)}
+          disabled={page >= totalPages}
+          aria-label="Next page"
+        >
+          Next
+        </Button>
+      </div>
+      <EditListingDialog
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        handleSubmit={handleSubmit}
+        handleEditSubmit={handleEditSubmit}
+        register={register}
+        errors={errors}
+        watch={watch}
+        setValue={setValue}
+        updateMutation={updateMutation}
+      />
     </div>
   );
 }
