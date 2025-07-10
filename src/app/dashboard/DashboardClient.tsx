@@ -2,13 +2,12 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   fetchListings,
-  approveListing,
-  rejectListing,
+  updateListingStatus,
   Listing,
   ListingsResponse,
   logout,
 } from "@/lib/api";
-import { useAuthRedirect } from "@/lib/useAuthRedirect";
+import { useAuthRedirect } from "@/hooks/useAuthRedirect";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -38,6 +37,14 @@ import {
 import Link from "next/link";
 import EditListingDialog from "./EditListingDialog";
 
+interface ListingRowProps {
+  listing: Listing;
+  approvingId: number | null;
+  rejectingId: number | null;
+  handleApprove: (listing: Listing) => void;
+  handleReject: (listing: Listing) => void;
+  handleEdit: (listing: Listing) => void;
+}
 // ListingRow memoized component for table row rendering
 const ListingRow = React.memo(function ListingRow({
   listing,
@@ -46,14 +53,7 @@ const ListingRow = React.memo(function ListingRow({
   handleApprove,
   handleReject,
   handleEdit,
-}: {
-  listing: Listing;
-  approvingId: number | null;
-  rejectingId: number | null;
-  handleApprove: (listing: Listing) => void;
-  handleReject: (listing: Listing) => void;
-  handleEdit: (listing: Listing) => void;
-}) {
+}: Readonly<ListingRowProps>) {
   return (
     <TableRow key={listing.id}>
       <TableCell>{listing.id}</TableCell>
@@ -187,7 +187,7 @@ export default function DashboardClient({
   const { listings, total, page, pageSize } = listingsData;
 
   const approveMutation = useMutation({
-    mutationFn: approveListing,
+    mutationFn: (id: number) => updateListingStatus(id, "approved"),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["listings"] });
       setActionSuccess("Listing approved.");
@@ -196,7 +196,7 @@ export default function DashboardClient({
   });
 
   const rejectMutation = useMutation({
-    mutationFn: rejectListing,
+    mutationFn: (id: number) => updateListingStatus(id, "rejected"),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["listings"] });
       setActionSuccess("Listing rejected.");
@@ -265,6 +265,7 @@ export default function DashboardClient({
 
   const handleEditSubmit: SubmitHandler<EditFormValues> = (data) => {
     if (!editListing) return;
+
     updateMutation.mutate({ ...data, id: editListing.id });
   };
 
@@ -293,15 +294,15 @@ export default function DashboardClient({
     content = <div className="text-red-600">Failed to load listings.</div>;
   } else {
     content = (
-      <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
-        <Table className="min-w-[600px] w-full text-sm">
+      <div className="w-full max-w-full overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
+        <Table className="min-w-[700px] w-full text-xs sm:text-sm">
           <TableHeader>
             <TableRow>
-              <TableHead>ID</TableHead>
-              <TableHead>Title</TableHead>
-              <TableHead>Description</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Actions</TableHead>
+              <TableHead className="px-2 py-2">ID</TableHead>
+              <TableHead className="px-2 py-2">Title</TableHead>
+              <TableHead className="px-2 py-2">Description</TableHead>
+              <TableHead className="px-2 py-2">Status</TableHead>
+              <TableHead className="px-2 py-2">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>{renderTableRows}</TableBody>
@@ -418,6 +419,7 @@ export default function DashboardClient({
           onClick={() => handlePageChange(page - 1)}
           disabled={page <= 1}
           aria-label="Previous page"
+          className="cursor-pointer"
         >
           Prev
         </Button>
@@ -430,6 +432,7 @@ export default function DashboardClient({
           onClick={() => handlePageChange(page + 1)}
           disabled={page >= totalPages}
           aria-label="Next page"
+          className="cursor-pointer"
         >
           Next
         </Button>

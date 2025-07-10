@@ -17,10 +17,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ListingStatus } from "@/types/listing";
-import {
-  FieldErrors,
-  UseFormReturn,
+import type {
   UseFormHandleSubmit,
+  UseFormReturn,
+  FieldErrors,
 } from "react-hook-form";
 import type { EditFormValues } from "./DashboardClient";
 

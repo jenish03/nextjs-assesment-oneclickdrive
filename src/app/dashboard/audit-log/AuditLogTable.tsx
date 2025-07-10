@@ -7,15 +7,19 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-export type AuditLogEntry = {
+export interface AuditLogEntry {
   id: number;
   listing_id: number;
   action: string;
   admin: string;
   timestamp: string;
-};
+}
 
-export default function AuditLogTable({ logs }: { logs: AuditLogEntry[] }) {
+export interface AuditLogTableProps {
+  logs: AuditLogEntry[];
+}
+
+export default function AuditLogTable({ logs }: Readonly<AuditLogTableProps>) {
   return (
     <div className="max-w-4xl mx-auto py-8 px-2 sm:px-6 lg:px-8">
       <h2 className="text-2xl font-bold mb-4">Audit Trail</h2>

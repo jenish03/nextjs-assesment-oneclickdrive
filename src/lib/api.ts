@@ -25,7 +25,7 @@ export async function login({
   try {
     return await axios.post("/api/auth/login", { username, password });
   } catch (error) {
-    console.error("error", error);
+    throw error;
   }
 }
 
@@ -50,19 +50,15 @@ export async function fetchListings(
   }
 }
 
-export async function approveListing(id: number) {
+export async function updateListingStatus(
+  id: number,
+  status: "approved" | "rejected" | "pending"
+) {
   try {
-    return await axios.patch(`/api/listings/${id}`, { status: "approved" });
+    return await axios.patch(`/api/listings/${id}`, { status });
   } catch (error) {
     console.error("error", error);
-  }
-}
-
-export async function rejectListing(id: number) {
-  try {
-    return await axios.patch(`/api/listings/${id}`, { status: "rejected" });
-  } catch (error) {
-    console.error("error", error);
+    throw error;
   }
 }
 
@@ -75,7 +71,11 @@ export async function logout() {
 }
 
 export async function fetchAuditLogs() {
-  const res = await fetch("/api/audit-log");
-  if (!res.ok) throw new Error("Failed to fetch audit logs");
-  return res.json();
+  try {
+    const res = await axios.get("/api/audit-log");
+    return res.data;
+  } catch (error) {
+    console.error("Failed to fetch audit logs:", error);
+    throw error;
+  }
 }

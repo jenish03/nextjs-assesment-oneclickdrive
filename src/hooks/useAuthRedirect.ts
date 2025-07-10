@@ -13,6 +13,7 @@ export function useAuthRedirect({
   const router = useRouter();
 
   useEffect(() => {
+    if (!redirectTo) return; // Do not redirect if redirectTo is empty
     const isAuthenticated = Cookies.get("auth_token") === "authenticated";
     if (requireAuth && !isAuthenticated) {
       router.replace(redirectTo);
